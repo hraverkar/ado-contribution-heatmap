@@ -1,16 +1,16 @@
-# Contribution Heatmap for Azure DevOps
+# ADO Contribution Heatmap
 
 [![CI](https://github.com/mainadwitiya/azure-devops-contribution-heatmap/actions/workflows/ci.yml/badge.svg)](https://github.com/mainadwitiya/azure-devops-contribution-heatmap/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-A contribution calendar for your own Azure Repos commits, rendered as a hub inside Azure DevOps.
+A set of contribution calendars for you and other members of the active Azure DevOps project.
 
 It answers one question well: *what did my commit activity look like over the last year?* — as a day-by-day
 calendar, a set of headline numbers, a per-repository breakdown, and a click-through to any day's commits.
 
 **It runs entirely inside Azure DevOps.** No backend service, no database, no personal access tokens, no
-third-party SaaS, no external CDN, and no telemetry. The only network destination is your own Azure DevOps
-organisation's REST API, called with the short-lived token the extension host issues for the signed-in user.
+third-party SaaS, no external CDN, and no telemetry. Network requests go only to your Azure DevOps
+organisation, authenticated with the short-lived token the extension host issues for the signed-in user.
 
 ---
 
@@ -22,7 +22,7 @@ organisation's REST API, called with the short-lived token the extension host is
 - [Authentication](#authentication)
 - [What data it accesses](#what-data-it-accesses)
 - [Security guarantees](#security-guarantees)
-- [How commits are attributed to you](#how-commits-are-attributed-to-you)
+- [How commits are attributed to contributors](#how-commits-are-attributed-to-contributors)
 - [Performance and caching](#performance-and-caching)
 - [Local development](#local-development)
 - [Project structure](#project-structure)
@@ -34,9 +34,9 @@ organisation's REST API, called with the short-lived token the extension host is
 
 ## What it does
 
-**Contribution calendar.** Seven weekday rows by one column per week, one cell per day, shaded by how many
-commits you authored that day. The calendar resizes with the selected range — a 30-day view uses larger cells
-than a 365-day view.
+**Contributor calendars.** Choose one or more members of the active project from the Contributors dropdown.
+Each person gets an independent seven-row calendar, statistics and contribution scale. The calendar resizes
+with the selected range — a 30-day view uses larger cells than a 365-day view.
 
 **Summary statistics**, computed over the selected range: total commits, active days, current streak, longest
 streak, average commits per active day, and repositories with activity.
@@ -79,7 +79,7 @@ npm run package
 `npm run package` writes the extension to the repository root:
 
 ```
-hraverkar.azure-devops-contribution-heatmap-1.0.1.vsix
+hraverkar.ado-contribution-heatmap-1.0.6.vsix
 ```
 
 The file name is `{publisher}.{id}-{version}.vsix`. To stamp your own publisher without editing the manifest:
@@ -130,18 +130,17 @@ cleared with the rest of your site data.
 
 ## Permissions and why they are needed
 
-The manifest requests exactly one scope:
+The manifest requests two read-only scopes:
 
 | Scope | Name | Access | Why |
 | --- | --- | --- | --- |
 | `vso.code` | Code (read) | **Read-only** | List the Git repositories you can already see, and read commit *metadata* (SHA, author, date, message subject, commit URL) so days can be counted and linked. |
+| `vso.project` | Project and Team (read) | **Read-only** | List teams and their members in the active project so contributors can be selected. |
 
 No other scope is requested. In particular:
 
 - **No write scope of any kind.** `vso.code_write`, `vso.code_manage` and `vso.code_full` are not requested,
   so the extension cannot create, modify or delete anything.
-- **No `vso.project`.** Listing repositories at organisation scope returns each repository's project inline,
-  so the Project and Team scope is unnecessary.
 - **No `vso.profile`, `vso.identity` or `vso.graph`.** Your identity comes from the extension host via
   `SDK.getUser()`, which is not a REST call and needs no scope.
 - **No `vso.extension.data`.** Preferences are stored in the browser, not in Azure DevOps.
@@ -151,9 +150,9 @@ No other scope is requested. In particular:
 
 ### What the scope does *not* grant
 
-`vso.code` is the scope ceiling, not the effective permission. Azure DevOps still applies your own repository
-ACLs to every request: repositories you cannot read are simply absent from the response. The extension cannot
-see anything you could not already see by browsing **Repos** yourself.
+These scopes are ceilings, not effective permissions. Azure DevOps still applies your own project/team and
+repository ACLs to every request. The member picker lists identities from teams visible in the active project;
+commit calendars only show metadata from repositories you can read.
 
 ---
 
@@ -186,11 +185,12 @@ Two auth edge cases are handled explicitly:
 
 ## What data it accesses
 
-Two REST endpoints, both read-only, both `GET`:
+Three REST endpoints, all read-only `GET` requests:
 
 | Call | Purpose | Fields used |
 | --- | --- | --- |
 | `GET {org}/[{project}/]_apis/git/repositories?api-version=7.1` | Discover repositories you can read | `id`, `name`, `project`, `webUrl`, `defaultBranch`, `isDisabled`, `size` |
+| `GET {org}/_apis/projects/{project}/teams` and `.../teams/{team}/members` | Populate the contributor picker | Team and member identity metadata (id, display name, unique name) |
 | `GET {org}/{project}/_apis/git/repositories/{repo}/commits?api-version=7.1&searchCriteria…` | Commit metadata within the date window | `commitId`, `author.{name,email,date}`, `comment` (first line only), `remoteUrl` |
 
 The commit query pins every content-bearing flag off:
@@ -240,7 +240,7 @@ simply do not persist.
 
 ---
 
-## How commits are attributed to you
+## How commits are attributed to contributors
 
 This is the one genuinely hard part, and it deserves explaining.
 
@@ -251,13 +251,14 @@ DevOps profile — a laptop configured with a personal address, a corporate tena
 
 The extension uses a **two-layer** strategy:
 
-1. **Server-side narrowing.** For each repository, it issues one request per known alias using
-   `searchCriteria.author`, bounded by `fromDate`/`toDate`. Azure DevOps does the bulk filtering, so only your
-   commits cross the wire instead of a repository's entire history.
-2. **Local verification.** Every returned record is re-checked against the full identity set before it is
-   counted. A loose or unexpected server-side match therefore cannot attribute someone else's commit to you.
+1. **Server-side narrowing.** For each repository, it issues requests for selected members' known aliases
+   using `searchCriteria.author`, bounded by `fromDate`/`toDate`. Azure DevOps does the bulk filtering instead
+   of transferring a repository's entire history.
+2. **Local verification.** Every returned record is re-checked against selected identities before it is
+   counted. An unexpected server-side match therefore cannot inflate a contributor's calendar.
 
-Aliases are seeded from `SDK.getUser()` — your unique name and display name — and normalised case-insensitively.
+Your own aliases are seeded from `SDK.getUser()`; other members use their project identity's unique name and
+display name. Values are normalised case-insensitively.
 RFC 5233 sub-addresses are handled, so `ada.lovelace+ci@example.com` matches `ada.lovelace@example.com`.
 Records with missing or unparseable author metadata are dropped rather than guessed at.
 

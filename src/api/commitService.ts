@@ -52,6 +52,8 @@ interface CommitListResponse {
 export interface FetchCommitsOptions {
   readonly range: DateRange;
   readonly identity: IdentitySet;
+  /** Additional people included in a multi-contributor scan. */
+  readonly additionalIdentities?: readonly IdentitySet[];
   /** When true, no `author` criterion is sent and matching happens locally. */
   readonly deepScan?: boolean;
   readonly signal?: AbortSignal;
@@ -77,7 +79,10 @@ export async function fetchRepositoryCommits(
   repository: Repository,
   options: FetchCommitsOptions,
 ): Promise<RepositoryCommitResult> {
-  const aliases = options.deepScan ? [undefined] : options.identity.queryAliases;
+  const identities = [options.identity, ...(options.additionalIdentities ?? [])];
+  const aliases = options.deepScan
+    ? [undefined]
+    : [...new Set(identities.flatMap((identity) => identity.queryAliases))];
 
   if (aliases.length === 0) {
     return { repository, commits: [], truncated: false, error: null };
@@ -95,7 +100,8 @@ export async function fetchRepositoryCommits(
         if (!record) {
           continue;
         }
-        if (!matchesIdentity(options.identity, { name: record.authorName, email: record.authorEmail })) {
+        const author = { name: record.authorName, email: record.authorEmail };
+        if (!identities.some((identity) => matchesIdentity(identity, author))) {
           continue;
         }
         // Overlapping alias queries return the same commit more than once.

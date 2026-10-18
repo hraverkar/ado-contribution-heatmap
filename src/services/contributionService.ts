@@ -50,6 +50,7 @@ export interface ScanRequest {
   readonly scope: RepositoryScope;
   readonly range: DateRange;
   readonly identity: IdentitySet;
+  readonly additionalIdentities?: readonly IdentitySet[];
   readonly deepScan?: boolean;
   /** Ignores caches and re-reads everything. */
   readonly forceRefresh?: boolean;
@@ -127,6 +128,7 @@ export class ContributionService {
           return await fetchRepositoryCommits(this.http, repository, {
             range: targetRange,
             identity: request.identity,
+            additionalIdentities: request.additionalIdentities,
             deepScan: request.deepScan ?? false,
             signal: request.signal,
           });
@@ -231,8 +233,14 @@ export function scopeKey(scope: RepositoryScope): string {
  * containment is handled explicitly.
  */
 export function scanCacheKey(request: ScanRequest): string {
-  const aliases = [...request.identity.queryAliases].map((alias) => alias.toLowerCase()).sort();
-  const localParts = request.identity.matchLocalParts.size > 0 ? 'local' : 'strict';
+  const identities = [request.identity, ...(request.additionalIdentities ?? [])];
+  const aliases = [...new Set(identities.flatMap((identity) => identity.queryAliases))]
+    .map((alias) => alias.toLowerCase())
+    .sort();
+  const memberIds = identities.map((identity) => identity.user.id).sort();
+  const localParts = identities.some((identity) => identity.matchLocalParts.size > 0)
+    ? 'local'
+    : 'strict';
   const mode = request.deepScan ? 'deep' : 'filtered';
-  return `${scopeKey(request.scope)}|${mode}|${localParts}|${aliases.join(' ')}`;
+  return `${scopeKey(request.scope)}|${mode}|${localParts}|${memberIds.join(',')}|${aliases.join(' ')}`;
 }

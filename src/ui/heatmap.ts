@@ -33,6 +33,7 @@ export interface HeatmapOptions {
   readonly thresholds: IntensityThresholds;
   readonly usePatterns: boolean;
   readonly selectedDate: string | null;
+  readonly contributorName?: string;
   readonly onSelectDay: (date: string) => void;
 }
 
@@ -85,11 +86,15 @@ export function tooltipLines(cell: CalendarCell): string[] {
 
 /** Renders the calendar, its month/weekday axes and the intensity legend. */
 export function renderHeatmap(options: HeatmapOptions): HTMLElement {
-  const { grid, thresholds, usePatterns, selectedDate, onSelectDay } = options;
+  const { grid, thresholds, usePatterns, selectedDate, contributorName, onSelectDay } = options;
 
   const root = el('section', {
     className: 'ch-heatmap',
-    attrs: { 'aria-label': 'Contribution calendar' },
+    attrs: {
+      'aria-label': contributorName
+        ? `${contributorName} contribution calendar`
+        : 'Contribution calendar',
+    },
     dataset: { patterns: usePatterns ? 'on' : 'off' },
   });
 

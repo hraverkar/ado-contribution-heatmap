@@ -217,6 +217,36 @@ describe('fetchRepositoryCommits', () => {
     ]);
   });
 
+  it('queries and verifies commits for all selected identities', async () => {
+    const grace = buildIdentitySet({
+      ...testUser,
+      id: 'grace-id',
+      uniqueName: 'grace@example.com',
+      displayName: 'Grace Hopper',
+    });
+    const adaCommit = rawCommit({ commitId: 'ada-commit' });
+    const graceCommit = rawCommit({
+      commitId: 'grace-commit',
+      author: {
+        name: 'Grace Hopper',
+        email: 'grace@example.com',
+        date: '2026-08-25T10:15:00Z',
+      },
+    });
+    const client = stubClient([[adaCommit, graceCommit], [adaCommit, graceCommit], [adaCommit, graceCommit], [adaCommit, graceCommit]]);
+
+    const result = await fetchRepositoryCommits(client, repository, {
+      range,
+      identity,
+      additionalIdentities: [grace],
+    });
+
+    expect(client.calls.map((call) => call['searchCriteria.author'])).toEqual([
+      ...new Set([...identity.queryAliases, ...grace.queryAliases]),
+    ]);
+    expect(result.commits.map((commit) => commit.id)).toEqual(['ada-commit', 'grace-commit']);
+  });
+
   it('de-duplicates a commit returned by two alias queries', async () => {
     const client = stubClient([[rawCommit()], [rawCommit()]]);
     const result = await fetchRepositoryCommits(client, repository, { range, identity });

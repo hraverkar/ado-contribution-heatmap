@@ -10,6 +10,7 @@
 import type { DateRange, DateRangePresetId } from '../models/dateRange.js';
 import { DATE_RANGE_PRESETS } from '../models/dateRange.js';
 import type { Repository } from '../models/repository.js';
+import type { CurrentUser } from '../models/user.js';
 import type { ScopeKind } from '../services/preferencesService.js';
 import { formatDayMedium, isValidDayKey, todayKey } from '../util/dates.js';
 import { MAX_CUSTOM_RANGE_DAYS, MIN_SUPPORTED_DAY } from '../config/constants.js';
@@ -20,6 +21,10 @@ export interface ToolbarState {
   readonly hasProject: boolean;
   readonly projectName: string | null;
   readonly repositories: readonly Repository[];
+  readonly members: readonly CurrentUser[];
+  readonly selectedMemberIds: readonly string[];
+  readonly membersLoading: boolean;
+  readonly membersError: string | null;
   readonly selectedRepositoryId: string | null;
   readonly presetId: DateRangePresetId;
   readonly customRange: DateRange | null;
@@ -33,6 +38,7 @@ export interface ToolbarState {
 export interface ToolbarCallbacks {
   readonly onScopeChange: (scope: ScopeKind) => void;
   readonly onRepositoryChange: (repositoryId: string | null) => void;
+  readonly onMembersChange: (memberIds: readonly string[]) => void;
   readonly onPresetChange: (preset: DateRangePresetId) => void;
   readonly onCustomRangeChange: (range: DateRange) => void;
   readonly onPatternsChange: (usePatterns: boolean) => void;
@@ -68,10 +74,100 @@ export function renderToolbar(state: ToolbarState, callbacks: ToolbarCallbacks):
 
   root.appendChild(renderScopeField(state, callbacks));
   root.appendChild(renderRepositoryField(state, callbacks));
+  root.appendChild(renderMemberField(state, callbacks));
   root.appendChild(renderRangeField(state, callbacks));
 
   if (state.presetId === 'custom') {
     root.appendChild(renderCustomRangeFields(state, callbacks));
+  }
+
+  function renderMemberField(state: ToolbarState, callbacks: ToolbarCallbacks): HTMLElement {
+    const selected = new Set(state.selectedMemberIds);
+    const dropdown = el('details', {
+      className: 'ch-members',
+      attrs: { id: 'ch-members-dropdown' },
+    });
+    const label = selected.size === 1 ? '1 contributor' : `${selected.size} contributors`;
+    dropdown.appendChild(
+      el('summary', {
+        className: 'ch-button ch-members__trigger',
+        text: label,
+        attrs: {
+          'aria-label': `${label} selected. Choose contributors`,
+          'aria-controls': 'ch-members-options',
+          title: 'Choose one or more project contributors to compare',
+        },
+      }),
+    );
+
+    const options = el('div', {
+      className: 'ch-members__options',
+      attrs: { id: 'ch-members-options', role: 'group', 'aria-label': 'Project contributors' },
+    });
+
+    if (state.membersLoading) {
+      options.appendChild(el('p', { className: 'ch-field__hint', text: 'Loading project members…' }));
+    } else if (state.members.length === 0) {
+      options.appendChild(el('p', { className: 'ch-field__hint', text: 'No project members found.' }));
+    } else {
+      for (const member of state.members) {
+        const id = `ch-member-${encodeURIComponent(member.id)}`;
+        const checkbox = el('input', {
+          className: 'ch-checkbox',
+          attrs: { id, type: 'checkbox', value: member.id },
+        });
+        checkbox.checked = selected.has(member.id);
+        checkbox.disabled = !state.hasProject || state.membersLoading;
+        checkbox.addEventListener('change', () => {
+          const next = new Set(state.selectedMemberIds);
+          if (checkbox.checked) {
+            next.add(member.id);
+          } else {
+            next.delete(member.id);
+          }
+          callbacks.onMembersChange([...next]);
+        });
+        options.appendChild(
+          el('label', { className: 'ch-members__option', attrs: { for: id } }, [
+            checkbox,
+            el('span', {
+              className: 'ch-members__name',
+              text: member.displayName || member.uniqueName || member.id,
+              title: member.uniqueName && member.uniqueName !== member.displayName ? member.uniqueName : undefined,
+            }),
+          ]),
+        );
+      }
+    }
+
+    if (!state.hasProject) {
+      options.appendChild(
+        el('p', { className: 'ch-field__hint', text: 'Open a project to choose its contributors.' }),
+      );
+    } else if (state.membersError) {
+      options.appendChild(
+        el('p', { className: 'ch-field__hint ch-field__hint--warning', text: state.membersError }),
+      );
+      options.appendChild(
+        button('Retry member list', {
+          className: 'ch-button ch-button--subtle',
+          onClick: callbacks.onRefresh,
+        }),
+      );
+    } else if (!state.membersLoading) {
+      options.appendChild(
+        el('p', {
+          className: 'ch-field__hint',
+          text: 'Choose multiple people to compare their calendars.',
+        }),
+      );
+    }
+
+    dropdown.appendChild(options);
+    return el('div', { className: 'ch-field ch-members-field' }, [
+      el('span', { className: 'ch-field__label', text: 'Contributors' }),
+      dropdown,
+    ]);
   }
 
   root.appendChild(el('div', { className: 'ch-toolbar__spacer' }));

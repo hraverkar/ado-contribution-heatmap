@@ -14,6 +14,7 @@
 import type { AzureDevOpsContext } from '../api/azureDevOpsClient.js';
 import type { RepositoryScope } from '../api/repositoryService.js';
 import { resolveIdentity } from '../api/identityService.js';
+import { listProjectMembers } from '../api/projectMemberService.js';
 import { buildCalendar } from '../heatmap/calendar.js';
 import { computeIntensityThresholds } from '../heatmap/intensity.js';
 import type { ContributionEvent } from '../models/contribution.js';
@@ -21,7 +22,7 @@ import type { DateRange, DateRangePresetId } from '../models/dateRange.js';
 import type { AppError } from '../models/errors.js';
 import { toAppError } from '../models/errors.js';
 import type { Repository } from '../models/repository.js';
-import type { IdentitySet } from '../models/user.js';
+import type { CurrentUser, IdentitySet } from '../models/user.js';
 import {
   aggregateContributions,
   dayAt,
@@ -39,6 +40,7 @@ import { loadPreferences, savePreferences } from '../services/preferencesService
 import type { RepositorySort } from '../services/repositoryStatsService.js';
 import { summarizeRepositories } from '../services/repositoryStatsService.js';
 import { clampDateRange, isRangeClamped, resolveDateRange, todayKey } from '../util/dates.js';
+import { matchesIdentity } from '../util/identityMatch.js';
 import { logError } from '../util/log.js';
 import { dayPanelDescription, dayPanelTitle, renderCommitDetails } from './commitDetails.js';
 import { clear, el, replaceChildren } from './dom.js';
@@ -64,10 +66,15 @@ interface AppState {
   readonly status: Status;
   readonly preferences: Preferences;
   readonly identity: IdentitySet;
+  readonly members: readonly CurrentUser[];
+  readonly selectedMemberIds: readonly string[];
+  readonly membersLoading: boolean;
+  readonly membersError: AppError | null;
   readonly repositories: readonly Repository[];
   readonly events: readonly ContributionEvent[];
   readonly selectedRepositoryId: string | null;
   readonly selectedDate: string | null;
+  readonly selectedDateContributorId: string | null;
   readonly progress: ScanProgress | null;
   readonly error: AppError | null;
   readonly rangeAdjusted: boolean;
@@ -88,6 +95,7 @@ export class App {
   };
   private panel: PanelHandle | null = null;
   private inFlight: AbortController | null = null;
+  private membersInFlight: AbortController | null = null;
 
   constructor(
     private readonly context: AzureDevOpsContext,
@@ -114,10 +122,15 @@ export class App {
         customAliases: preferences.customAliases,
         matchEmailLocalPart: preferences.matchEmailLocalPart,
       }),
+      members: [context.user],
+      selectedMemberIds: [context.user.id],
+      membersLoading: false,
+      membersError: null,
       repositories: [],
       events: [],
       selectedRepositoryId: null,
       selectedDate: null,
+      selectedDateContributorId: null,
       progress: null,
       error: null,
       rangeAdjusted:
@@ -135,7 +148,7 @@ export class App {
   /** Renders the initial shell and performs the first scan. */
   async start(): Promise<void> {
     this.render();
-    await this.load({ forceRefresh: false });
+    await Promise.all([this.load({ forceRefresh: false }), this.loadMembers()]);
   }
 
   // ---------------------------------------------------------------- state
@@ -167,6 +180,20 @@ export class App {
   // ----------------------------------------------------------------- data
 
   private async load(options: { forceRefresh: boolean }): Promise<void> {
+    const identities = this.selectedIdentities();
+    if (identities.length === 0) {
+      this.inFlight?.abort();
+      this.setState({
+        status: 'ready',
+        events: [],
+        progress: null,
+        error: null,
+        truncatedRepositories: [],
+        failures: [],
+      });
+      return;
+    }
+
     this.inFlight?.abort();
     const controller = new AbortController();
     this.inFlight = controller;
@@ -177,7 +204,8 @@ export class App {
       const result = await this.service.scan({
         scope: this.scope,
         range: this.range,
-        identity: this.state.identity,
+        identity: identities[0] as IdentitySet,
+        additionalIdentities: identities.slice(1),
         deepScan: this.state.preferences.deepScan,
         forceRefresh: options.forceRefresh,
         signal: controller.signal,
@@ -221,6 +249,66 @@ export class App {
     }
   }
 
+  private async loadMembers(): Promise<void> {
+    const project = this.context.currentProject;
+    if (!project) {
+      this.setState({ members: [this.context.user], membersLoading: false, membersError: null });
+      return;
+    }
+
+    this.membersInFlight?.abort();
+    const controller = new AbortController();
+    this.membersInFlight = controller;
+    this.setState({ membersLoading: true, membersError: null });
+
+    try {
+      const projectMembers = await listProjectMembers(this.context.http, project.id, {
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted) {
+        return;
+      }
+
+      const members = projectMembers.some((member) => member.id === this.context.user.id)
+        ? projectMembers
+        : [...projectMembers, this.context.user];
+      const memberIds = new Set(members.map((member) => member.id));
+      const selectedMemberIds = this.state.selectedMemberIds.filter((id) => memberIds.has(id));
+      this.setState({
+        members,
+        selectedMemberIds:
+          selectedMemberIds.length > 0 ? selectedMemberIds : [this.context.user.id],
+        membersLoading: false,
+        membersError: null,
+      });
+    } catch (caught) {
+      if (controller.signal.aborted) {
+        return;
+      }
+      const error = toAppError(caught, 'Unable to retrieve project members.');
+      logError('Project member lookup failed.', caught);
+      this.setState({ membersLoading: false, membersError: error });
+    } finally {
+      if (this.membersInFlight === controller) {
+        this.membersInFlight = null;
+      }
+    }
+  }
+
+  private selectedIdentities(): IdentitySet[] {
+    const membersById = new Map(this.state.members.map((member) => [member.id, member]));
+    return this.state.selectedMemberIds.flatMap((id) => {
+      const member = membersById.get(id);
+      if (!member) {
+        return [];
+      }
+      if (member.id === this.context.user.id) {
+        return [this.state.identity];
+      }
+      return [resolveIdentity(member)];
+    });
+  }
+
   // -------------------------------------------------------------- actions
 
   private onScopeChange = (scope: ScopeKind): void => {
@@ -251,6 +339,16 @@ export class App {
     this.setState({ selectedRepositoryId });
   };
 
+  private onMembersChange = (selectedMemberIds: readonly string[]): void => {
+    this.panel?.close();
+    this.setState({
+      selectedMemberIds: [...new Set(selectedMemberIds)],
+      selectedDate: null,
+      selectedDateContributorId: null,
+    });
+    void this.load({ forceRefresh: false });
+  };
+
   private onSortChange = (sort: RepositorySort): void => {
     this.setState({ preferences: this.updatePreferences({ sort }) });
   };
@@ -260,12 +358,17 @@ export class App {
   };
 
   private onRefresh = (): void => {
-    void this.load({ forceRefresh: true });
+    void this.refresh();
   };
 
-  private onSelectDay = (date: string): void => {
-    this.setState({ selectedDate: date });
-    this.openDayPanel(date);
+  private async refresh(): Promise<void> {
+    await this.loadMembers();
+    await this.load({ forceRefresh: true });
+  }
+
+  private onSelectDay = (date: string, contributorId: string): void => {
+    this.setState({ selectedDate: date, selectedDateContributorId: contributorId });
+    this.openDayPanel(date, contributorId);
   };
 
   private onOpenSettings = (): void => {
@@ -306,20 +409,32 @@ export class App {
 
     // Aliases change which commits qualify, so cached results no longer apply.
     this.service.clearCache();
-    this.setState({ preferences, identity, events: [], selectedDate: null });
+    this.setState({
+      preferences,
+      identity,
+      events: [],
+      selectedDate: null,
+      selectedDateContributorId: null,
+    });
     void this.load({ forceRefresh: true });
   }
 
-  private openDayPanel(date: string): void {
-    const day = dayAt(this.derived().contributions, date);
+  private openDayPanel(date: string, contributorId: string): void {
+    const contributor = this.derived().contributors.find(
+      (candidate) => candidate.member.id === contributorId,
+    );
+    if (!contributor) {
+      return;
+    }
+    const day = dayAt(contributor.contributions, date);
     this.panel?.close();
     this.panel = openPanel({
       title: dayPanelTitle(day),
-      description: dayPanelDescription(day),
+      description: `${contributor.member.displayName || contributor.member.uniqueName}: ${dayPanelDescription(day)}`,
       host: this.regions.panel,
       onClose: () => {
         this.panel = null;
-        this.setState({ selectedDate: null });
+        this.setState({ selectedDate: null, selectedDateContributorId: null });
       },
       content: renderCommitDetails({
         day,
@@ -335,20 +450,33 @@ export class App {
     const range = this.range;
     const inRange = filterEventsByRange(this.state.events, range);
     const visible = filterEventsByRepository(inRange, this.state.selectedRepositoryId);
-    const contributions = aggregateContributions(visible);
-    const thresholds = computeIntensityThresholds(
-      [...contributions.values()].map((day) => day.count),
-    );
+    const contributors = this.selectedIdentities().map((identity) => {
+      const member = this.state.members.find((candidate) => candidate.id === identity.user.id);
+      if (!member) {
+        return null;
+      }
+      const memberEvents = visible.filter((event) =>
+        matchesIdentity(identity, { name: event.actorName, email: event.actorEmail }),
+      );
+      const contributions = aggregateContributions(memberEvents);
+      const thresholds = computeIntensityThresholds(
+        [...contributions.values()].map((day) => day.count),
+      );
+      return {
+        member,
+        contributions,
+        thresholds,
+        grid: buildCalendar(range, contributions, {
+          weekStartsOn: this.state.preferences.weekStartsOn,
+          thresholds,
+        }),
+      };
+    }).filter((contributor): contributor is NonNullable<typeof contributor> => contributor !== null);
 
     return {
       range,
       inRange,
-      contributions,
-      thresholds,
-      grid: buildCalendar(range, contributions, {
-        weekStartsOn: this.state.preferences.weekStartsOn,
-        thresholds,
-      }),
+      contributors,
       summaries: summarizeRepositories(inRange, this.state.repositories),
     };
   }
@@ -356,8 +484,17 @@ export class App {
   private render(): void {
     const focusedId =
       document.activeElement instanceof HTMLElement ? document.activeElement.id : '';
+    const openDetails = [
+      ...this.regions.toolbar.querySelectorAll<HTMLDetailsElement>('details[open][id]'),
+    ].map((details) => details.id);
 
     this.renderToolbar();
+    for (const id of openDetails) {
+      const details = document.getElementById(id);
+      if (details instanceof HTMLDetailsElement) {
+        details.open = true;
+      }
+    }
     this.renderNotices();
     this.renderContent();
     this.renderStatusLine();
@@ -376,6 +513,10 @@ export class App {
           hasProject: this.context.currentProject !== null,
           projectName: this.context.currentProject?.name ?? null,
           repositories: this.state.repositories,
+          members: this.state.members,
+          selectedMemberIds: this.state.selectedMemberIds,
+          membersLoading: this.state.membersLoading,
+          membersError: this.state.membersError?.detail ?? this.state.membersError?.message ?? null,
           selectedRepositoryId: this.state.selectedRepositoryId,
           presetId: this.state.preferences.presetId,
           customRange: this.state.preferences.customRange,
@@ -387,6 +528,7 @@ export class App {
         {
           onScopeChange: this.onScopeChange,
           onRepositoryChange: this.onRepositoryChange,
+          onMembersChange: this.onMembersChange,
           onPresetChange: this.onPresetChange,
           onCustomRangeChange: this.onCustomRangeChange,
           onPatternsChange: this.onPatternsChange,
@@ -456,39 +598,65 @@ export class App {
     }
 
     const derived = this.derived();
-    const hasContributions = derived.contributions.size > 0;
-
     clear(content);
 
-    if (!hasContributions) {
+    if (derived.contributors.length === 0) {
       content.appendChild(
         renderEmptyState({
-          title: 'No contributions found for this period.',
-          description:
-            this.state.selectedRepositoryId === null
-              ? 'No commits matched your identity in the selected date range.'
-              : 'No commits matched your identity in this repository for the selected date range.',
-          hint: 'If you commit under a different email address, add it under “Author aliases”.',
-          actionLabel: 'Author aliases',
-          onAction: this.onOpenSettings,
+          title: 'Choose contributors to compare.',
+          description: 'Open the Contributors dropdown and select one or more project members.',
         }),
       );
     } else {
-      content.appendChild(
-        renderSummary(
-          computeStatistics(derived.contributions, derived.range, { today: todayKey() }),
-          derived.range,
-        ),
-      );
-      content.appendChild(
-        renderHeatmap({
-          grid: derived.grid,
-          thresholds: derived.thresholds,
-          usePatterns: this.state.preferences.usePatterns,
-          selectedDate: this.state.selectedDate,
-          onSelectDay: this.onSelectDay,
-        }),
-      );
+      for (const contributor of derived.contributors) {
+        const name =
+          contributor.member.displayName ||
+          contributor.member.uniqueName ||
+          contributor.member.id;
+        const section = el('section', {
+          className: 'ch-contributor',
+          attrs: { 'aria-label': `${name} contribution summary` },
+        });
+        section.appendChild(
+          el('div', { className: 'ch-contributor__header' }, [
+            el('h2', { className: 'ch-heading ch-contributor__name', text: name }),
+            contributor.member.uniqueName && contributor.member.uniqueName !== name
+              ? el('span', {
+                  className: 'ch-contributor__identity',
+                  text: contributor.member.uniqueName,
+                })
+              : null,
+          ]),
+        );
+        section.appendChild(
+          renderSummary(
+            computeStatistics(contributor.contributions, derived.range, { today: todayKey() }),
+            derived.range,
+          ),
+        );
+        if (contributor.contributions.size === 0) {
+          section.appendChild(
+            el('p', {
+              className: 'ch-contributor__empty',
+              text: 'No commits found for this contributor in the selected period.',
+            }),
+          );
+        }
+        section.appendChild(
+          renderHeatmap({
+            grid: contributor.grid,
+            thresholds: contributor.thresholds,
+            usePatterns: this.state.preferences.usePatterns,
+            selectedDate:
+              this.state.selectedDateContributorId === contributor.member.id
+                ? this.state.selectedDate
+                : null,
+            contributorName: name,
+            onSelectDay: (date) => this.onSelectDay(date, contributor.member.id),
+          }),
+        );
+        content.appendChild(section);
+      }
     }
 
     content.appendChild(

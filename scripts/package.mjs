@@ -39,8 +39,13 @@ if (argv.includes('--dev')) {
   args.push('--rev-version');
 }
 
-const tfx = join(root, 'node_modules', '.bin', process.platform === 'win32' ? 'tfx.cmd' : 'tfx');
-const result = spawnSync(tfx, args, { cwd: root, stdio: 'inherit' });
+const tfx = join(root, 'node_modules', 'tfx-cli', '_build', 'tfx-cli.js');
+if (!existsSync(tfx)) {
+  console.error('tfx-cli is missing. Install dependencies with `npm install` first.');
+  process.exit(1);
+}
+
+const result = spawnSync(process.execPath, [tfx, ...args], { cwd: root, stdio: 'inherit' });
 
 if (result.error) {
   console.error('Could not run tfx-cli:', result.error.message);

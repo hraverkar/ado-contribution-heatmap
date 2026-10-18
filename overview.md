@@ -1,6 +1,6 @@
 # ADO Contribution Heatmap
 
-A contribution calendar for your own Azure Repos commits, right inside Azure DevOps.
+A set of contribution calendars for you and other members of the active Azure DevOps project.
 
 It answers one question well: **what did my commit activity actually look like this year?** — as a
 day-by-day calendar, a set of headline numbers, a per-repository breakdown, and a click-through to any
@@ -17,9 +17,9 @@ in your browser, and forgotten when you close the tab.
 
 ## What you get
 
-**A contribution calendar.** Seven weekday rows, one column per week, one cell per day, shaded by how
-many commits you authored. The calendar resizes with the range you pick — a 90-day view uses larger
-cells than a full year.
+**Contributor calendars.** Select one or more project members in the Contributors dropdown. Each person
+gets an independent calendar, summary statistics, and contribution scale. The calendar resizes with the
+range you pick — a 90-day view uses larger cells than a full year.
 
 **Headline numbers** for the selected range: total commits, active days, current streak, longest streak,
 average commits per active day, and how many repositories you touched.
@@ -47,13 +47,14 @@ or 365 days, the current year, or a custom range.
 
 ## Permissions
 
-One scope, read-only:
+Read-only scopes:
 
 | Scope | What it allows |
 | --- | --- |
 | **Code (read)** — `vso.code` | List repositories you can already see, and read commit metadata: SHA, author, date, message subject, and the commit's URL. |
+| **Project and Team (read)** — `vso.project` | List project teams and member identity metadata for the contributor selector. |
 
-That is the entire request. No write access. No access to work items, builds, releases, or your profile.
+No write access. No access to work items, builds, releases, or private profile data.
 
 **Your source code is never requested.** The extension does not read file contents, diffs or change
 lists, and does not clone anything. It also cannot show you anything you could not already see — Azure

@@ -126,8 +126,8 @@ for (const scope of scopes) {
   check(!WRITE_SCOPE.test(scope), `Scope "${scope}" grants write access; only read scopes allowed.`);
 }
 check(
-  scopes.every((scope) => scope === 'vso.code'),
-  `Expected only the read-only "vso.code" scope, found: ${scopes.join(', ')}.`,
+  scopes.length === 2 && scopes.includes('vso.code') && scopes.includes('vso.project'),
+  `Expected the read-only "vso.code" and "vso.project" scopes, found: ${scopes.join(', ')}.`,
 );
 notes.push(`Scopes requested: ${scopes.join(', ') || '(none)'}`);
 

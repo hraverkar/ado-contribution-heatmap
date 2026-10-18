@@ -234,6 +234,70 @@ body {
   color: var(--ch-text-secondary);
 }
 
+.ch-members {
+  position: relative;
+}
+
+.ch-members__trigger {
+  display: block;
+  list-style: none;
+  min-width: 155px;
+  text-align: left;
+}
+
+.ch-members__trigger::-webkit-details-marker {
+  display: none;
+}
+
+.ch-members__trigger::after {
+  float: right;
+  margin-left: 10px;
+  content: '▾';
+  color: var(--ch-text-secondary);
+}
+
+.ch-members[open] .ch-members__trigger::after {
+  content: '▴';
+}
+
+.ch-members__options {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: min(320px, 80vw);
+  max-height: 340px;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid var(--ch-border);
+  border-radius: 10px;
+  background: var(--ch-bg);
+  box-shadow: var(--ch-card-shadow-hover);
+}
+
+.ch-members__option {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.ch-members__option:hover {
+  background: var(--ch-surface-hover);
+}
+
+.ch-members__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .ch-select,
 .ch-input,
 .ch-textarea {
@@ -435,6 +499,26 @@ body {
   display: flex;
   flex-direction: column;
   gap: 18px;
+}
+
+.ch-contributor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ch-contributor__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 5px 10px;
+}
+
+.ch-contributor__identity,
+.ch-contributor__empty {
+  margin: 0;
+  color: var(--ch-text-secondary);
+  font-size: 12px;
 }
 
 /* --------------------------------------------------------------- summary */
@@ -1132,6 +1216,16 @@ body {
   .ch-select,
   .ch-input {
     max-width: none;
+    width: 100%;
+  }
+
+  .ch-members-field,
+  .ch-members,
+  .ch-members__trigger {
+    width: 100%;
+  }
+
+  .ch-members__options {
     width: 100%;
   }
 

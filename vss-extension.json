@@ -1,11 +1,11 @@
 {
   "manifestVersion": 1,
   "id": "ado-contribution-heatmap",
-  "version": "1.0.1",
+  "version": "1.0.6",
   "name": "ADO Contribution Heatmap",
   "description": "Explore your Azure Repos commit activity with a colorful contribution calendar, streaks, and repository insights. Runs entirely in your browser with read-only access.",
   "publisher": "hraverkar",
-  "public": true,
+  "public": false,
   "categories": [
     "Azure Repos"
   ],
@@ -67,7 +67,8 @@
     }
   ],
   "scopes": [
-    "vso.code"
+    "vso.code",
+    "vso.project"
   ],
   "contributions": [
     {

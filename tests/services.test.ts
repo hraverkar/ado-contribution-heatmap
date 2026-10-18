@@ -196,6 +196,20 @@ describe('scan cache keys', () => {
       scanCacheKey({ scope, identity, range }),
     );
   });
+
+  it('partitions cache entries by all selected contributor identities', () => {
+    const scope = { kind: 'organization' } as const;
+    const range = { start: '2026-01-01', end: '2026-01-31' };
+    const grace = buildIdentitySet({
+      ...testUser,
+      id: 'grace-id',
+      uniqueName: 'grace@example.com',
+      displayName: 'Grace Hopper',
+    });
+    expect(scanCacheKey({ scope, identity, additionalIdentities: [grace], range })).not.toBe(
+      scanCacheKey({ scope, identity, range }),
+    );
+  });
 });
 
 describe('ContributionService', () => {

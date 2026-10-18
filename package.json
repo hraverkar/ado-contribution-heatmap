@@ -1,0 +1,41 @@
+{
+  "name": "azure-devops-contribution-heatmap",
+  "version": "1.0.1",
+  "description": "GitHub-style contribution heatmap for the authenticated Azure DevOps user, rendered inside Azure DevOps. No backend, no PATs, no third-party services.",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "clean": "node scripts/clean.mjs",
+    "typecheck": "tsc --noEmit",
+    "build": "npm run clean && npm run typecheck && node scripts/build.mjs",
+    "build:dev": "node scripts/build.mjs --dev",
+    "watch": "node scripts/build.mjs --dev --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "coverage": "vitest run --coverage",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "package": "npm run build && node scripts/package.mjs",
+    "package:dev": "npm run build && node scripts/package.mjs --dev",
+    "validate": "node scripts/validate.mjs",
+    "verify": "npm run lint && npm run test && npm run build && npm run validate"
+  },
+  "dependencies": {
+    "azure-devops-extension-sdk": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@vitest/coverage-v8": "^2.1.8",
+    "esbuild": "^0.24.2",
+    "eslint": "^9.17.0",
+    "tfx-cli": "^0.21.1",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8",
+    "@eslint/js": "^9.17.0",
+    "typescript-eslint": "^8.18.1"
+  }
+}

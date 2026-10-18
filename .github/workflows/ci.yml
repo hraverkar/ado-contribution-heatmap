@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A pushed branch and its PR would otherwise run the same job twice.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20.x', '22.x']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm run test
+
+      - name: Build
+        run: npm run build
+
+      # The security guarantees the README makes are asserted here, not just
+      # claimed: read-only scopes, no URLs outside Azure DevOps, no source-code
+      # endpoints, no telemetry sinks, no credential literals in the tree.
+      - name: Validate manifest, scopes and bundle
+        run: npm run validate
+
+  package:
+    name: Package VSIX
+    runs-on: ubuntu-latest
+    needs: verify
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build and package
+        run: npm run package
+
+      - name: Re-validate the packaged artifact
+        run: npm run validate
+
+      - name: Upload VSIX
+        uses: actions/upload-artifact@v4
+        with:
+          name: contribution-heatmap-vsix
+          path: '*.vsix'
+          if-no-files-found: error
+          retention-days: 30
+
+  coverage:
+    name: Coverage thresholds
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: npm
+
+      - run: npm ci
+
+      # Fails below 80% lines/functions or 75% branches, per vitest.config.ts.
+      - name: Coverage
+        run: npm run coverage

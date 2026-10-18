@@ -1,0 +1,99 @@
+{
+  "manifestVersion": 1,
+  "id": "ado-contribution-heatmap",
+  "version": "1.0.1",
+  "name": "ADO Contribution Heatmap",
+  "description": "Explore your Azure Repos commit activity with a colorful contribution calendar, streaks, and repository insights. Runs entirely in your browser with read-only access.",
+  "publisher": "hraverkar",
+  "public": true,
+  "categories": [
+    "Azure Repos"
+  ],
+  "tags": [
+    "contributions",
+    "heatmap",
+    "calendar",
+    "commits",
+    "activity",
+    "analytics"
+  ],
+  "targets": [
+    {
+      "id": "Microsoft.VisualStudio.Services"
+    }
+  ],
+  "icons": {
+    "default": "images/icon.png"
+  },
+  "branding": {
+    "color": "#1f2a37",
+    "theme": "dark"
+  },
+  "content": {
+    "details": {
+      "path": "overview.md"
+    },
+    "license": {
+      "path": "LICENSE"
+    }
+  },
+  "links": {
+    "repository": {
+      "uri": "https://github.com/hraverkar/ado-contribution-heatmap"
+    },
+    "issues": {
+      "uri": "https://github.com/hraverkar/ado-contribution-heatmap/issues"
+    },
+    "support": {
+      "uri": "https://github.com/hraverkar/ado-contribution-heatmap/issues"
+    },
+    "license": {
+      "uri": "https://github.com/hraverkar/ado-contribution-heatmap/blob/main/LICENSE"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "uri": "https://github.com/hraverkar/ado-contribution-heatmap"
+  },
+  "screenshots": [
+    {
+      "path": "images/screenshot-calendar.png"
+    },
+    {
+      "path": "images/screenshot-dark.png"
+    },
+    {
+      "path": "images/screenshot-day-details.png"
+    }
+  ],
+  "scopes": [
+    "vso.code"
+  ],
+  "contributions": [
+    {
+      "id": "contribution-heatmap-hub",
+      "type": "ms.vss-web.hub",
+      "description": "Adds the ADO Contribution Heatmap hub to the Azure Repos hub group.",
+      "targets": [
+        "ms.vss-code-web.code-hub-group"
+      ],
+      "properties": {
+        "name": "ADO Contribution Heatmap",
+        "order": 60,
+        "uri": "dist/heatmap.html",
+        "iconName": "Calendar",
+        "supportsMobile": true
+      }
+    }
+  ],
+  "files": [
+    {
+      "path": "dist",
+      "addressable": true
+    },
+    {
+      "path": "images",
+      "addressable": true
+    }
+  ]
+}
